@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>シンデレラ・ファクトリー</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #FFFDF7; /* ミルク */
+    touch-action: none;            /* ブラウザ既定のピンチ/スクロールを無効化 */
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+  }
+  #game { width: 100%; height: 100%; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<!-- Phaser 3（ローカル同梱。読めない場合はCDNフォールバック） -->
+<script src="vendor/phaser.min.js"></script>
+<script>window.Phaser || document.write('<script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"><\/script>');</script>
+
+<!-- 設定（データとロジックの分離。素材差し替えは config/assets.js を編集） -->
+<script src="src/config/palette.js"></script>
+<script src="src/config/items.js"></script>
+<script src="src/config/buildings.js"></script>
+<script src="src/config/assets.js"></script>
+
+<!-- コア -->
+<script src="src/core/placeholders.js"></script>
+<script src="src/core/save.js"></script>
+
+<!-- システム -->
+<script src="src/systems/world.js"></script>
+<script src="src/systems/logistics.js"></script>
+
+<!-- シーン -->
+<script src="src/scenes/BootScene.js"></script>
+<script src="src/scenes/GameScene.js"></script>
+<script src="src/scenes/UIScene.js"></script>
+
+<!-- 起動 -->
+<script src="src/main.js"></script>
+</body>
+</html>

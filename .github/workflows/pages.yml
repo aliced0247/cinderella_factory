@@ -1,0 +1,43 @@
+# GitHub Pages へ静的サイト（リポジトリ直下の index.html）を公開する。
+# main にマージ／push されると自動でデプロイされる。
+# 公開URL： https://aliced0247.github.io/cinderella_factory/
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # 手動実行も可
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時に走らないように直列化（古い実行はキャンセル）
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true   # 未設定なら Pages を自動で有効化
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .            # リポジトリ直下をまるごと公開（index.html がトップ）
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
