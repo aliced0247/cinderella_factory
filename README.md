@@ -8,7 +8,7 @@ Factorioリスペクトの工場自動化ゲーム × お姫様成り上がり�
 ## 遊び方
 
 - **オンライン（推奨）**：https://aliced0247.github.io/cinderella_factory/
-  （main にマージされると GitHub Actions が自動デプロイ。スマホでそのまま開ける）
+  （GitHub Pages のブランチ配信。`main` の `/ (root)` をそのまま公開。スマホでそのまま開ける）
 - **ローカル**：`index.html` をブラウザで開くだけ（Phaser 3 同梱・サーバー不要・課金なし・セーブはlocalStorage）
 - **同一Wi-Fiのスマホ実機**：`npx http-server -p 8080` → スマホから `http://<PCのIP>:8080`
 
