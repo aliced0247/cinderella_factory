@@ -69,6 +69,38 @@ CF.input = { joy: { x: 0, y: 0 } };
 
     updateMoney() {
       this.moneyText.setText(`${CF.state.money.toLocaleString()} リル`);
+      this.refreshButtons();
+    }
+
+    affordable(type) {
+      return CF.state.money >= CF.BUILDINGS[type].cost;
+    }
+
+    /** 各建設ボタンの見た目を「選択中／買えるか」で更新 */
+    refreshButtons() {
+      if (!this.buttons) return;
+      // 選択中の道具が買えなくなったら自動で解除
+      if (CF.ui.tool && !this.affordable(CF.ui.tool)) {
+        CF.ui.tool = null;
+        CF.events.emit('tool', null);
+      }
+      for (const type of CF.BUILD_ORDER) {
+        const btn = this.buttons[type];
+        if (!btn) continue;
+        const sel = CF.ui.tool === type;
+        const ok = this.affordable(type);
+        // リル不足はグレーアウト（選択不可）
+        const alpha = ok ? 1 : 0.4;
+        btn.icon.setAlpha(alpha);
+        btn.label.setAlpha(alpha);
+        btn.bg.setFillStyle(CF.hex(sel ? P.GOLD_1 : (ok ? P.MILK : P.MILK_TEA)),
+          ok ? 1 : 0.6);
+        btn.bg.setStrokeStyle(sel ? 3 : 2, CF.hex(sel ? P.GOLD_2 : P.MILK_TEA));
+        // 価格バッジ：買えるなら金、買えないなら赤系（必要額を強調）
+        btn.costBg.setFillStyle(CF.hex(ok ? P.GOLD_1 : P.SUGAR_PINK))
+          .setStrokeStyle(1, CF.hex(ok ? P.GOLD_2 : P.CHERRY));
+        btn.costTx.setColor(ok ? P.GOLD_3 : P.CHERRY).setAlpha(1);
+      }
     }
 
     // ------------------------------------------------------------ 下部バー（建設パレット）
@@ -90,10 +122,16 @@ CF.input = { joy: { x: 0, y: 0 } };
         const label = this.add.text(0, 22, def.name, {
           fontSize: '9px', fontStyle: 'bold', color: P.COCOA_SHADOW
         }).setOrigin(0.5);
-        cont.add([bg, icon, label]);
+        // 価格バッジ（上部・金色）
+        const costBg = this.add.rectangle(0, -27, 44, 15, CF.hex(P.GOLD_1))
+          .setStrokeStyle(1, CF.hex(P.GOLD_2));
+        const costTx = this.add.text(0, -27, `${def.cost}リル`, {
+          fontSize: '10px', fontStyle: 'bold', color: P.GOLD_3
+        }).setOrigin(0.5);
+        cont.add([bg, icon, label, costBg, costTx]);
         bg.on('pointerup', () => this.selectTool(type));
         this.bottomBar.add(cont);
-        this.buttons[type] = { cont, bg, icon };
+        this.buttons[type] = { cont, bg, icon, label, costBg, costTx };
       }
 
       // 向きボタン（次に設置するものの向き）
@@ -118,13 +156,13 @@ CF.input = { joy: { x: 0, y: 0 } };
     }
 
     selectTool(type) {
-      CF.ui.tool = (CF.ui.tool === type) ? null : type; // 再タップで解除
-      for (const t of CF.BUILD_ORDER) {
-        const sel = CF.ui.tool === t;
-        this.buttons[t].bg
-          .setFillStyle(CF.hex(sel ? P.GOLD_1 : P.MILK))
-          .setStrokeStyle(sel ? 3 : 2, CF.hex(sel ? P.GOLD_2 : P.MILK_TEA));
+      // リル不足の道具は選べない（必要額を案内）
+      if (CF.ui.tool !== type && !this.affordable(type)) {
+        this.showToast(`${CF.BUILDINGS[type].name}には${CF.BUILDINGS[type].cost}リル必要だよ`);
+        return;
       }
+      CF.ui.tool = (CF.ui.tool === type) ? null : type; // 再タップで解除
+      this.refreshButtons();
       CF.events.emit('tool', CF.ui.tool);
       if (CF.ui.tool === 'belt') this.showToast('ドラッグでベルトを連続敷設できるよ');
       else if (CF.ui.tool) this.showToast(`タップで${CF.BUILDINGS[CF.ui.tool].name}を設置`);

@@ -23,6 +23,7 @@ CF.BUILDINGS = {
     name: '魔法の泉',
     size: 2,
     tex: 'building_spawner',
+    cost: 50,          // 設置コスト（リル）
     limit: 2,          // 設置数上限
     interval: 3.0,     // 排出間隔（秒）
     out: 'gem_ore'     // 排出アイテム
@@ -31,20 +32,29 @@ CF.BUILDINGS = {
     name: 'ベルト',
     size: 1,
     tex: 'belt',
+    cost: 2,           // 設置コスト（リル）
     speed: 1.8         // 搬送速度（マス/秒）
   },
   polisher: {
     name: '研磨機',
     size: 2,
     tex: 'building_polisher',
+    cost: 20,          // 設置コスト（リル）
     recipe: { in: 'gem_ore', out: 'gem_polished', time: 3.0 } // 加工時間（秒）
   },
   delivery: {
     name: '納品箱',
     size: 2,
-    tex: 'building_delivery'
+    tex: 'building_delivery',
+    cost: 10           // 設置コスト（リル）
   }
 };
+
+/** 撤去時の払い戻し率（半額） */
+CF.REFUND_RATE = 0.5;
+
+/** 初期所持リル（最初のライン1本がぎりぎり組める額） */
+CF.START_MONEY = 100;
 
 /** 建設パレットの並び順 */
 CF.BUILD_ORDER = ['spawner', 'belt', 'polisher', 'delivery'];

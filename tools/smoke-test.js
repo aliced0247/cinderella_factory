@@ -35,52 +35,82 @@ try {
   await page.waitForFunction(() => window.CF && CF.game && CF.game.scene.isActive('Game'), null, { timeout: 15000 });
   console.log('✓ ゲーム起動（Gameシーン稼働）');
 
-  // 生産ラインを配置（泉→ベルト→研磨機→ベルト→納品箱）
-  const placed = await page.evaluate(() => {
+  // 初期所持リル（最初のライン1本がぎりぎり組める額）
+  const startMoney = await page.evaluate(() => CF.state.money);
+  if (startMoney === 100) console.log('✓ 初期所持リル 100');
+  else { console.log('✗ 初期所持リルが100でない:', startMoney); process.exitCode = 1; }
+
+  // 生産ライン1本を「コストを払って」配置（曲がりベルト2回を含む）
+  const cost = await page.evaluate(() => {
     const gs = CF.game.scene.getScene('Game');
-    const add = (t, x, y, d) => {
+    // 設置：コスト判定→支払い→設備生成（ゲーム本体と同じ流れ）
+    const buy = (t, x, y, d) => {
+      const def = CF.BUILDINGS[t];
+      if (CF.state.money < def.cost) return false;
+      if (!CF.World.canPlace(t, x, y)) return false;
       const b = CF.World.place(t, x, y, d);
-      if (b) gs.addBuildingSprite(b);
-      return !!b;
+      gs.spend(def.cost);
+      gs.addBuildingSprite(b);
+      return true;
     };
     const r = [];
-    r.push(add('spawner', 2, 4, 0));
-    r.push(add('belt', 4, 4, 0));
-    r.push(add('belt', 5, 4, 0));
-    r.push(add('belt', 6, 4, 0));
-    r.push(add('polisher', 7, 3, 0));
-    r.push(add('belt', 9, 3, 0));
-    r.push(add('belt', 10, 3, 0));
-    r.push(add('belt', 11, 3, 0));
-    r.push(add('delivery', 12, 2, 0));
-    // 原石直納ライン（泉2つ目・曲がりベルトも検証）
-    r.push(add('spawner', 2, 8, 0));
-    r.push(add('belt', 4, 8, 0));
-    r.push(add('belt', 5, 8, 1));  // 南へ曲がる
-    r.push(add('belt', 5, 9, 1));
-    r.push(add('belt', 5, 10, 0)); // 東へ曲がる
-    r.push(add('belt', 6, 10, 0));
-    r.push(add('delivery', 7, 9, 0));
-    // 上限テスト：3つ目の泉は置けないはず
-    r.push(!CF.World.canPlace('spawner', 14, 10));
+    r.push(buy('spawner', 2, 4, 0));
+    r.push(buy('belt', 4, 4, 0));
+    r.push(buy('belt', 5, 4, 1));  // 南へ曲がる
+    r.push(buy('belt', 5, 5, 1));
+    r.push(buy('belt', 5, 6, 0));  // 東へ曲がる
+    r.push(buy('belt', 6, 6, 0));
+    r.push(buy('polisher', 7, 5, 0));
+    r.push(buy('belt', 9, 5, 0));
+    r.push(buy('belt', 10, 5, 0));
+    r.push(buy('delivery', 11, 4, 0));
     CF.Save.request();
-    return r;
+    return { ok: r.every(Boolean), money: CF.state.money };
   });
-  if (placed.every(Boolean)) console.log('✓ ライン配置OK（泉上限2も確認）');
-  else { console.log('✗ 配置失敗:', placed); process.exitCode = 1; }
+  // 50 + 7×2 + 20 + 10 = 94 → 残り6リル
+  if (cost.ok && cost.money === 6) console.log(`✓ コスト支払いOK（94リル消費 → 残り${cost.money}リル）`);
+  else { console.log('✗ コスト計算が合わない:', cost); process.exitCode = 1; }
+
+  // 残金6リルでは魔法の泉(50)も研磨機(20)も買えない
+  const broke = await page.evaluate(() => ({
+    spawner: CF.game.scene.getScene('UI').affordable('spawner'),
+    belt: CF.game.scene.getScene('UI').affordable('belt')
+  }));
+  if (!broke.spawner && broke.belt) console.log('✓ リル不足ゲートOK（泉×／ベルト○）');
+  else { console.log('✗ 不足ゲートNG:', broke); process.exitCode = 1; }
+
+  // 上限テスト：泉は1つしか置いていないが、3つ目相当の判定（上限2）
+  const limitOk = await page.evaluate(() => {
+    CF.World.place('spawner', 2, 10, 0); // 2つ目（コスト無視・上限確認用）
+    return !CF.World.canPlace('spawner', 14, 10); // 3つ目は不可
+  });
+  if (limitOk) console.log('✓ 泉の上限2を確認');
+  else { console.log('✗ 上限チェックNG'); process.exitCode = 1; }
+
+  // 撤去の半額払い戻し（泉50 → +25）
+  const refund = await page.evaluate(() => {
+    const gs = CF.game.scene.getScene('Game');
+    const before = CF.state.money;
+    const sp = CF.World.room().buildings.find(b => b.type === 'spawner' && b.x === 2 && b.y === 10);
+    gs.removeBuilding(sp);
+    return CF.state.money - before;
+  });
+  if (refund === 25) console.log('✓ 撤去の半額払い戻しOK（泉50 → +25）');
+  else { console.log('✗ 払い戻しNG:', refund); process.exitCode = 1; }
 
   // 生産ループが回ってお金が増えるのを待つ（研磨宝石5リル以上）
-  await page.waitForFunction(() => CF.state.money >= 5, null, { timeout: 30000 });
+  const moneyNow = await page.evaluate(() => CF.state.money);
+  await page.waitForFunction((m) => CF.state.money >= m + 5, moneyNow, { timeout: 30000 });
   const state = await page.evaluate(() => ({
     money: CF.state.money,
     items: CF.Logistics.items.length
   }));
   console.log(`✓ 生産ループ稼働：所持 ${state.money} リル / 稼働アイテム ${state.items} 個`);
 
-  await page.waitForTimeout(3000);
+  // 次の納品まで待つ（研磨1サイクル＝湧き3s＋搬送＋研磨3s＋搬送で十数秒かかる）
+  await page.waitForFunction((m) => CF.state.money > m, state.money, { timeout: 20000 });
   const money2 = await page.evaluate(() => CF.state.money);
-  if (money2 > state.money) console.log(`✓ 継続稼働：${money2} リル（+${money2 - state.money}）`);
-  else { console.log('✗ お金が増えていない'); process.exitCode = 1; }
+  console.log(`✓ 継続稼働：${money2} リル（+${money2 - state.money}）`);
 
   // セーブ＆リロード復元
   await page.evaluate(() => CF.Save.save());
@@ -90,7 +120,7 @@ try {
     money: CF.state.money,
     buildings: CF.World.room().buildings.length
   }));
-  if (restored.buildings === 16 && restored.money >= money2) {
+  if (restored.buildings === 10 && restored.money >= money2) {
     console.log(`✓ セーブ復元OK：設備 ${restored.buildings} 件 / ${restored.money} リル`);
   } else {
     console.log('✗ セーブ復元NG:', restored); process.exitCode = 1;

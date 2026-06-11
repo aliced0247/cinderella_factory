@@ -156,6 +156,7 @@ window.CF = window.CF || {};
 
       // ベルトはドラッグで連続敷設
       if (CF.ui.tool === 'belt') {
+        this._beltBrokeToast = false; // ドラッグごとに不足トーストを1回だけ出す
         const t = this.tileAt(p);
         this.paintLast = t;
         this.paintBelt(t, null);
@@ -278,15 +279,26 @@ window.CF = window.CF || {};
         CF.events.emit('toast', `${def.name}は${def.limit}つまでだよ`);
         return;
       }
+      if (CF.state.money < def.cost) {
+        CF.events.emit('toast', `${def.name}には${def.cost}リル必要だよ`);
+        return;
+      }
       if (!CF.World.canPlace(type, o.x, o.y)) {
         this.flashInvalid(o, def.size);
         return;
       }
       const b = CF.World.place(type, o.x, o.y, CF.ui.buildDir);
+      this.spend(def.cost);
       this.addBuildingSprite(b);
       this.popSprite(this.buildingSprites.get(b.id));
       this.closeMenu();
       CF.Save.request();
+    }
+
+    /** 支払い（所持リルを減らしてUI更新） */
+    spend(amount) {
+      CF.state.money -= amount;
+      CF.events.emit('money');
     }
 
     /** ベルト1マス敷設（既存ベルトなら向きだけ更新＝引き直し） */
@@ -295,6 +307,7 @@ window.CF = window.CF || {};
       if (t.x < 0 || t.y < 0 || t.x >= room.w || t.y >= room.h) return;
       const existing = CF.World.at(t.x, t.y);
       if (existing) {
+        // 引き直し（向きの更新）は無料。既存ベルトの再敷設はコスト不要
         if (existing.type === 'belt' && dir != null && existing.dir !== dir) {
           existing.dir = dir;
           this.updateBuildingSprite(existing);
@@ -302,8 +315,18 @@ window.CF = window.CF || {};
         }
         return;
       }
+      const cost = CF.BUILDINGS.belt.cost;
+      if (CF.state.money < cost) {
+        // ドラッグ中に連呼されるのでトーストは控えめに（1回だけ）
+        if (!this._beltBrokeToast) {
+          this._beltBrokeToast = true;
+          CF.events.emit('toast', `ベルトには${cost}リル必要だよ`);
+        }
+        return;
+      }
       const b = CF.World.place('belt', t.x, t.y, dir == null ? CF.ui.buildDir : dir);
       if (b) {
+        this.spend(cost);
         this.addBuildingSprite(b);
         this.closeMenu();
         CF.Save.request();
@@ -359,12 +382,34 @@ window.CF = window.CF || {};
     }
 
     removeBuilding(b) {
+      // 撤去は半額払い戻し
+      const refund = Math.floor(CF.BUILDINGS[b.type].cost * CF.REFUND_RATE);
+      const c = CF.World.centerPx(b);
+
       CF.Logistics.onBuildingRemoved(b);
       CF.World.remove(b);
       const spr = this.buildingSprites.get(b.id);
       if (spr) spr.destroy();
       this.buildingSprites.delete(b.id);
+
+      if (refund > 0) {
+        CF.state.money += refund;
+        CF.events.emit('money');
+        this.floatText(c.x, c.y, `+${refund}リル`, CF.PALETTE.MINT_3);
+      }
       CF.Save.request();
+    }
+
+    /** 任意位置に浮かび上がるテキスト（払い戻し・売上表示の共通化） */
+    floatText(x, y, msg, color) {
+      const tx = this.add.text(x, y - 10, msg, {
+        fontSize: '13px', fontStyle: 'bold',
+        color, stroke: CF.PALETTE.MILK, strokeThickness: 3
+      }).setOrigin(0.5).setDepth(D_FX);
+      this.tweens.add({
+        targets: tx, y: y - 36, alpha: 0, duration: 800,
+        onComplete: () => tx.destroy()
+      });
     }
 
     popSprite(spr) {
@@ -450,15 +495,7 @@ window.CF = window.CF || {};
 
     onSell(e) {
       this.sparkles.explode(8, e.x, e.y);
-      const tx = this.add.text(e.x, e.y - 10, `+${e.price}リル`, {
-        fontSize: '13px', fontStyle: 'bold',
-        color: CF.PALETTE.GOLD_2,
-        stroke: CF.PALETTE.MILK, strokeThickness: 3
-      }).setOrigin(0.5).setDepth(D_FX);
-      this.tweens.add({
-        targets: tx, y: e.y - 36, alpha: 0, duration: 800,
-        onComplete: () => tx.destroy()
-      });
+      this.floatText(e.x, e.y, `+${e.price}リル`, CF.PALETTE.GOLD_2);
     }
 
     onMachineOut(b) {

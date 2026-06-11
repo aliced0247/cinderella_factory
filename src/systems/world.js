@@ -20,11 +20,11 @@ CF.World = {
   init() {
     this.rooms = [];
     this._nextId = 1;
-    CF.state.money = 0;
+    CF.state.money = CF.START_MONEY;
 
     const data = CF.Save.load();
     if (data) {
-      CF.state.money = data.money || 0;
+      CF.state.money = (data.money == null) ? CF.START_MONEY : data.money;
       for (const r of data.rooms) {
         const room = this._createRoom(r.w, r.h);
         this.rooms.push(room);
