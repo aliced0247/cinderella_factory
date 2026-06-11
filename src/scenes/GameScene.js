@@ -382,8 +382,14 @@ window.CF = window.CF || {};
     }
 
     removeBuilding(b) {
-      // 撤去は半額払い戻し
-      const refund = Math.floor(CF.BUILDINGS[b.type].cost * CF.REFUND_RATE);
+      // 撤去は半額払い戻し。ただし最後の泉（全種類合計で1個）は全額（詰み対策）
+      let rate = CF.REFUND_RATE;
+      if (CF.BUILDINGS[b.type].kind === 'spawner') {
+        const spawners = CF.World.room().buildings
+          .filter((x) => CF.BUILDINGS[x.type].kind === 'spawner').length;
+        if (spawners <= 1) rate = 1.0; // これが最後の収入源 → 全額返す
+      }
+      const refund = Math.floor(CF.BUILDINGS[b.type].cost * rate);
       const c = CF.World.centerPx(b);
 
       CF.Logistics.onBuildingRemoved(b);
@@ -425,43 +431,71 @@ window.CF = window.CF || {};
       this.closeMenu();
       const c = CF.World.centerPx(b);
       const def = CF.BUILDINGS[b.type];
-      const cont = this.add.container(c.x, c.y - b.size * T() / 2 - 26).setDepth(D_MENU);
+      const switchable = def.recipes && def.recipes.length > 1;
+
+      const cont = this.add.container(c.x, c.y - b.size * T() / 2 - 30).setDepth(D_MENU);
+      const width = switchable ? 168 : 120;
+      this.menuHalfW = width / 2;
 
       // 背景
-      const bg = this.add.rectangle(0, 0, 120, 44, CF.hex(CF.PALETTE.MILK), 0.96)
+      const bg = this.add.rectangle(0, 0, width, 44, CF.hex(CF.PALETTE.MILK), 0.96)
         .setStrokeStyle(2, CF.hex(CF.PALETTE.GOLD_2));
-      const label = this.add.text(0, -32, def.name, {
+      // 見出し（設備名＋レシピ名）
+      const title = switchable ? `${def.name}：${CF.recipeName(def, b.recipeIndex)}` : def.name;
+      const label = this.add.text(0, -32, title, {
         fontSize: '12px', fontStyle: 'bold',
         color: CF.PALETTE.COCOA_SHADOW,
         backgroundColor: CF.PALETTE.MILK,
         padding: { x: 6, y: 2 }
       }).setOrigin(0.5);
+      cont.add([bg, label]);
 
-      // 回転ボタン
-      const rotBg = this.add.rectangle(-28, 0, 40, 34, CF.hex(CF.PALETTE.LAVENDER_1))
-        .setStrokeStyle(2, CF.hex(CF.PALETTE.LAVENDER_3)).setInteractive();
-      const rotTx = this.add.text(-28, 0, '⟳', {
-        fontSize: '20px', color: CF.PALETTE.LAVENDER_3, fontStyle: 'bold'
-      }).setOrigin(0.5);
-      rotBg.on('pointerup', () => {
+      // ボタン位置（レシピ切替の有無で2〜3個）
+      const xs = switchable ? [-52, 0, 52] : [-28, 28];
+      let i = 0;
+
+      // 回転
+      this._menuButton(cont, xs[i++], '⟳', CF.PALETTE.LAVENDER_1, CF.PALETTE.LAVENDER_3, () => {
         CF.World.rotate(b);
         this.updateBuildingSprite(b);
         CF.Save.request();
       });
 
-      // 撤去ボタン
-      const delBg = this.add.rectangle(28, 0, 40, 34, CF.hex(CF.PALETTE.SUGAR_PINK))
-        .setStrokeStyle(2, CF.hex(CF.PALETTE.CHERRY)).setInteractive();
-      const delTx = this.add.text(28, 0, '✕', {
-        fontSize: '18px', color: CF.PALETTE.CHERRY, fontStyle: 'bold'
-      }).setOrigin(0.5);
-      delBg.on('pointerup', () => {
+      // レシピ切替（複数レシピを持つ機械のみ）
+      if (switchable) {
+        const recBg = this.add.rectangle(xs[i], 0, 40, 34, CF.hex(CF.PALETTE.MINT_1))
+          .setStrokeStyle(2, CF.hex(CF.PALETTE.MINT_3)).setInteractive();
+        const recIcon = this.add.image(xs[i], 0, CF.ITEMS[def.recipes[b.recipeIndex].out].tex)
+          .setScale(1.2);
+        recBg.on('pointerup', () => {
+          b.recipeIndex = (b.recipeIndex + 1) % def.recipes.length;
+          recIcon.setTexture(CF.ITEMS[def.recipes[b.recipeIndex].out].tex);
+          label.setText(`${def.name}：${CF.recipeName(def, b.recipeIndex)}`);
+          CF.events.emit('toast', `レシピ：${CF.recipeName(def, b.recipeIndex)}`);
+          CF.Save.request();
+        });
+        cont.add([recBg, recIcon]);
+        i++;
+      }
+
+      // 撤去
+      this._menuButton(cont, xs[i++], '✕', CF.PALETTE.SUGAR_PINK, CF.PALETTE.CHERRY, () => {
         this.removeBuilding(b);
         this.closeMenu();
       });
 
-      cont.add([bg, label, rotBg, rotTx, delBg, delTx]);
       this.menu = { cont, building: b };
+    }
+
+    /** ミニメニューのアイコンボタンを1つ足すヘルパ */
+    _menuButton(cont, x, glyph, fill, stroke, onTap) {
+      const bg = this.add.rectangle(x, 0, 40, 34, CF.hex(fill))
+        .setStrokeStyle(2, CF.hex(stroke)).setInteractive();
+      const tx = this.add.text(x, 0, glyph, {
+        fontSize: '19px', color: stroke, fontStyle: 'bold'
+      }).setOrigin(0.5);
+      bg.on('pointerup', onTap);
+      cont.add([bg, tx]);
     }
 
     closeMenu() {
@@ -476,7 +510,7 @@ window.CF = window.CF || {};
       if (!this.menu) return false;
       const w = this.cameras.main.getWorldPoint(p.x, p.y);
       const m = this.menu.cont;
-      return Math.abs(w.x - m.x) < 64 && Math.abs(w.y - m.y) < 40;
+      return Math.abs(w.x - m.x) < (this.menuHalfW || 64) + 4 && Math.abs(w.y - m.y) < 40;
     }
 
     // ------------------------------------------------------------ アイテム描画
@@ -551,7 +585,8 @@ window.CF = window.CF || {};
       if (this.chimneyTimer < 0.25) return;
       this.chimneyTimer = 0;
       for (const b of CF.World.room().buildings) {
-        if (b.type === 'polisher' && b.processing) {
+        const kind = CF.BUILDINGS[b.type].kind;
+        if ((kind === 'processor' || kind === 'assembler') && b.processing) {
           const c = CF.World.centerPx(b);
           this.sparkles.explode(1, c.x + Phaser.Math.Between(-8, 8), c.y - 30);
         }

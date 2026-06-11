@@ -30,7 +30,12 @@ CF.World = {
         this.rooms.push(room);
         for (const b of r.buildings) {
           // セーブ復元はバリデーション込みで再配置（壊れたデータに耐える）
-          this.place(b.t, b.x, b.y, b.d, this.rooms.length - 1);
+          const inst = this.place(b.t, b.x, b.y, b.d, this.rooms.length - 1);
+          // レシピ選択の復元（Phase 1セーブには無いので 0 のまま＝マイグレーション）
+          if (inst && b.r != null) {
+            const def = CF.BUILDINGS[b.t];
+            if (def.recipes) inst.recipeIndex = Phaser.Math.Clamp(b.r, 0, def.recipes.length - 1);
+          }
         }
       }
     }
@@ -99,12 +104,18 @@ CF.World = {
       type, x, y,
       dir: dir == null ? 0 : (dir & 3),
       size: def.size,
+      recipeIndex: 0,    // processor/assembler：選択中レシピ（セーブ対象）
       // --- 機械の動作状態（セーブ対象外） ---
       timer: 0,          // スポナー：排出タイマー
-      processing: null,  // 研磨機：{ t } 加工中
-      output: null,      // 研磨機：完成して排出待ちのアイテム種
-      incoming: false    // 研磨機：搬入中のアイテムがいる
+      processing: null,  // 加工中： { t, time, out }
+      output: null,      // 完成して排出待ちのアイテム種
+      incoming: false    // processor：搬入中のアイテムがいる
     };
+    // assembler（工房台）：複数素材の内部バッファ
+    if (def.kind === 'assembler') {
+      b.buffer = {};        // 素材種 → 個数
+      b.incomingCount = {}; // 素材種 → 搬入中の数（バッファ上限の予約に使う）
+    }
     const room = this.rooms[ri];
     for (let dy = 0; dy < def.size; dy++) {
       for (let dx = 0; dx < def.size; dx++) {

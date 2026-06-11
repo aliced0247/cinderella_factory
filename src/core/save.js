@@ -13,14 +13,17 @@ CF.Save = {
   save() {
     try {
       const data = {
-        v: 1,
+        v: 2,
         money: CF.state.money,
         rooms: CF.World.rooms.map((room) => ({
           w: room.w,
           h: room.h,
-          buildings: room.buildings.map((b) => ({
-            t: b.type, x: b.x, y: b.y, d: b.dir
-          }))
+          buildings: room.buildings.map((b) => {
+            const rec = { t: b.type, x: b.x, y: b.y, d: b.dir };
+            // レシピを持つ機械は選択中レシピも保存（v2〜）
+            if (CF.BUILDINGS[b.type].recipes) rec.r = b.recipeIndex;
+            return rec;
+          })
         }))
       };
       localStorage.setItem(this.KEY, JSON.stringify(data));
@@ -36,7 +39,8 @@ CF.Save = {
       const raw = localStorage.getItem(this.KEY);
       if (!raw) return null;
       const data = JSON.parse(raw);
-      if (!data || data.v !== 1) return null;
+      // v1（Phase 1）と v2（Phase 2）を受け入れる。配置データの形は前方互換
+      if (!data || (data.v !== 1 && data.v !== 2)) return null;
       return data;
     } catch (e) {
       console.warn('ロード失敗:', e);

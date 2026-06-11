@@ -86,13 +86,15 @@ CF.Logistics = {
 
   _tickMachines(dt) {
     for (const b of CF.World.room().buildings) {
-      if (b.type === 'spawner') this._tickSpawner(b, dt);
-      else if (b.type === 'polisher') this._tickPolisher(b, dt);
+      const kind = CF.BUILDINGS[b.type].kind;
+      if (kind === 'spawner') this._tickSpawner(b, dt);
+      else if (kind === 'processor') this._tickProcessor(b, dt);
+      else if (kind === 'assembler') this._tickAssembler(b, dt);
     }
   },
 
   _tickSpawner(b, dt) {
-    const def = CF.BUILDINGS.spawner;
+    const def = CF.BUILDINGS[b.type];
     b.timer += dt;
     if (b.timer < def.interval) return;
     b.timer = def.interval; // 排出先が空くまで待機（空いた瞬間に出す）
@@ -107,25 +109,52 @@ CF.Logistics = {
     }
   },
 
-  _tickPolisher(b, dt) {
-    const recipe = CF.BUILDINGS.polisher.recipe;
-    // 加工中
+  /** 1入力加工機（研磨機・ミシン）。出力種は加工開始時のレシピで確定済み */
+  _tickProcessor(b, dt) {
     if (b.processing) {
       b.processing.t += dt;
-      if (b.processing.t >= recipe.time) {
+      if (b.processing.t >= b.processing.time) {
+        b.output = b.processing.out;
         b.processing = null;
-        b.output = recipe.out;
       }
     }
-    // 排出待ち → 出力口の先のベルトへ
-    if (b.output && this.items.length < CF.ITEM_CAP) {
-      for (const c of CF.World.frontCells(b)) {
-        if (this.isFreeBelt(c.x, c.y)) {
-          this.spawnAt(b.output, c.x, c.y);
-          b.output = null;
-          CF.events.emit('machine:out', b);
-          break;
-        }
+    this._emitOutput(b);
+  },
+
+  /** 複数入力の合成台（工房台）。バッファが揃ったら加工開始 */
+  _tickAssembler(b, dt) {
+    const recipe = CF.BUILDINGS[b.type].recipes[b.recipeIndex];
+    // 揃っていれば加工開始（加工中・排出待ちでない時のみ）
+    if (!b.processing && !b.output && this._hasInputs(b, recipe)) {
+      for (const k in recipe.inputs) b.buffer[k] -= recipe.inputs[k];
+      b.processing = { t: 0, time: recipe.time, out: recipe.out };
+    }
+    if (b.processing) {
+      b.processing.t += dt;
+      if (b.processing.t >= b.processing.time) {
+        b.output = b.processing.out;
+        b.processing = null;
+      }
+    }
+    this._emitOutput(b);
+  },
+
+  _hasInputs(b, recipe) {
+    for (const k in recipe.inputs) {
+      if ((b.buffer[k] || 0) < recipe.inputs[k]) return false;
+    }
+    return true;
+  },
+
+  /** 完成品を出力口の先のベルトへ排出（共通） */
+  _emitOutput(b) {
+    if (!b.output || this.items.length >= CF.ITEM_CAP) return;
+    for (const c of CF.World.frontCells(b)) {
+      if (this.isFreeBelt(c.x, c.y)) {
+        this.spawnAt(b.output, c.x, c.y);
+        b.output = null;
+        CF.events.emit('machine:out', b);
+        break;
       }
     }
   },
@@ -149,12 +178,19 @@ CF.Logistics = {
 
     if (item.destB) {
       const b = item.destB;
-      if (b.type === 'polisher') {
-        // 機械に吸い込まれて加工開始
+      const kind = CF.BUILDINGS[b.type].kind;
+      if (kind === 'processor') {
+        // 機械に吸い込まれて加工開始（出力種は今のレシピで確定）
+        const recipe = CF.BUILDINGS[b.type].recipes[b.recipeIndex];
         b.incoming = false;
-        b.processing = { t: 0 };
+        b.processing = { t: 0, time: recipe.time, out: recipe.out };
         this._removeItem(item);
-      } else if (b.type === 'delivery') {
+      } else if (kind === 'assembler') {
+        // 内部バッファに積む（揃ったら _tickAssembler が加工開始）
+        b.incomingCount[item.type] = (b.incomingCount[item.type] || 1) - 1;
+        b.buffer[item.type] = (b.buffer[item.type] || 0) + 1;
+        this._removeItem(item);
+      } else if (kind === 'delivery') {
         // 売上に変換！
         const price = CF.ITEMS[item.type].price;
         CF.state.money += price;
@@ -183,7 +219,9 @@ CF.Logistics = {
     const target = CF.World.at(nx, ny);
     if (!target) return; // 行き止まり
 
-    if (target.type === 'belt') {
+    const kind = CF.BUILDINGS[target.type].kind;
+
+    if (kind === 'belt') {
       if (!this.occupied[this.key(nx, ny)]) {
         this._startMove(item, nx, ny, null);
         this.occupied[this.key(nx, ny)] = true;
@@ -191,21 +229,37 @@ CF.Logistics = {
       return;
     }
 
-    if (target.type === 'polisher') {
-      const recipe = CF.BUILDINGS.polisher.recipe;
-      // 入力条件：搬送方向が機械の向きと一致 ＆ 入口セル ＆ 機械が空いている ＆ レシピ一致
-      const isBack = CF.World.backCells(target).some((c) => c.x === nx && c.y === ny);
-      const accepts = belt.dir === target.dir && isBack &&
+    // 機械への投入は「搬送方向＝機械の向き」かつ「入力口（back面）セル」のときだけ
+    const intoInput = belt.dir === target.dir &&
+      CF.World.backCells(target).some((c) => c.x === nx && c.y === ny);
+
+    if (kind === 'processor') {
+      const recipe = CF.BUILDINGS[target.type].recipes[target.recipeIndex];
+      const accepts = intoInput &&
         item.type === recipe.in &&
         !target.processing && !target.output && !target.incoming;
       if (accepts) {
         target.incoming = true;
         this._startMove(item, nx, ny, target);
       }
+      return; // 受け入れ不可ならベルト上で待機（詰まり＝仕様）
+    }
+
+    if (kind === 'assembler') {
+      const recipe = CF.BUILDINGS[target.type].recipes[target.recipeIndex];
+      const cap = CF.BUILDINGS[target.type].bufferCap;
+      // レシピ外の素材は受け取らない（ベルト上で詰まる＝仕様）
+      if (intoInput && recipe.inputs[item.type] != null) {
+        const have = (target.buffer[item.type] || 0) + (target.incomingCount[item.type] || 0);
+        if (have < cap) {
+          target.incomingCount[item.type] = (target.incomingCount[item.type] || 0) + 1;
+          this._startMove(item, nx, ny, target);
+        }
+      }
       return;
     }
 
-    if (target.type === 'delivery') {
+    if (kind === 'delivery') {
       this._startMove(item, nx, ny, target);
       return;
     }

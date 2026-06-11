@@ -46,6 +46,42 @@ window.CF = window.CF || {};
     g.fillCircle(cx, cy, s * 0.32);
   }
 
+  /** 花（共通パーツ：5枚花弁＋芯） */
+  function drawFlower(g, cx, cy, r, petal, core) {
+    g.fillStyle(petal, 1);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      g.fillCircle(cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62, r * 0.5);
+    }
+    g.fillStyle(core, 1);
+    g.fillCircle(cx, cy, r * 0.42);
+  }
+
+  /**
+   * 泉（原料スポナー）の共通ボディ。出力口＝東（金の矢印）
+   * opts: { body, edge, basin, drawContent(g,cx,cy) }
+   */
+  function drawSpawnerBody(g, w, hgt, opts) {
+    g.fillStyle(h(opts.body), 1);
+    g.fillRoundedRect(2, 2, w - 4, hgt - 4, 8);
+    g.lineStyle(2, h(opts.edge), 1);
+    g.strokeRoundedRect(2, 2, w - 4, hgt - 4, 8);
+    // 泉（水面/受け皿）
+    g.fillStyle(h(opts.basin), 1);
+    g.fillCircle(w / 2 - 6, hgt / 2, 14);
+    g.lineStyle(2, h(opts.edge), 0.8);
+    g.strokeCircle(w / 2 - 6, hgt / 2, 14);
+    // 中身（湧くもの）
+    opts.drawContent(g, w / 2 - 6, hgt / 2);
+    // 金歯車（右下）
+    drawGear(g, w - 14, hgt - 14, 7);
+    // リボン（上）
+    drawRibbon(g, w / 2, 9, 6, h(P.PINK_2));
+    // 出力口（東＝右）：金の矢印
+    g.fillStyle(h(P.GOLD_2), 1);
+    g.fillTriangle(w - 9, hgt / 2 - 7, w - 9, hgt / 2 + 7, w - 1, hgt / 2);
+  }
+
   CF.PLACEHOLDERS = {
     /** 床A：クリーム */
     floor_a(scene, key, w, hgt) {
@@ -228,6 +264,202 @@ window.CF = window.CF || {};
         g.fillRect(cx - 5, 3, 10, 2);
         // 胸元リボン
         drawRibbon(g, cx, 22, 4, h(P.JEWEL_PINK));
+      });
+    },
+
+    // ============================================================ Phase 2
+
+    /** 絹糸の泉（ミルクティー系）：糸巻きが湧く */
+    spawner_silk(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        drawSpawnerBody(g, w, hgt, {
+          body: P.MILK_TEA, edge: P.BISCUIT, basin: P.CREAM,
+          drawContent: (gg, cx, cy) => {
+            // 糸巻き
+            gg.fillStyle(h(P.BISCUIT), 1);
+            gg.fillRoundedRect(cx - 7, cy - 4, 14, 8, 2);
+            gg.fillStyle(h(P.MILK), 1);
+            for (let i = -5; i <= 5; i += 2) gg.fillRect(cx + i, cy - 4, 1, 8);
+            gg.fillStyle(h(P.COCOA_SHADOW), 1);
+            gg.fillRect(cx - 8, cy - 5, 2, 10);
+            gg.fillRect(cx + 6, cy - 5, 2, 10);
+          }
+        });
+      });
+    },
+
+    /** 花の泉（ピンク系）：コーラルの花が湧く */
+    spawner_flower(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        drawSpawnerBody(g, w, hgt, {
+          body: P.PINK_1, edge: P.PINK_3, basin: P.SUGAR_PINK,
+          drawContent: (gg, cx, cy) => {
+            drawFlower(gg, cx, cy, 9, h(P.CLEAR_CORAL), h(P.LEMON_2));
+          }
+        });
+      });
+    },
+
+    /** ミシン（2×2・裁縫＝ピンク系）：入力口=西／出力口=東 */
+    sewing(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        g.fillStyle(h(P.PINK_1), 1);
+        g.fillRoundedRect(2, 2, w - 4, hgt - 4, 8);
+        g.lineStyle(2, h(P.PINK_3), 1);
+        g.strokeRoundedRect(2, 2, w - 4, hgt - 4, 8);
+        // ミシンのアーム（金）＋針
+        g.fillStyle(h(P.GOLD_2), 1);
+        g.fillRoundedRect(w / 2 - 14, 12, 28, 7, 3);
+        g.fillRect(w / 2 + 9, 18, 3, 12);
+        g.fillStyle(h(P.GOLD_3), 1);
+        g.fillRect(w / 2 + 10, 28, 1, 5); // 針
+        // 布（ミント差し色）
+        g.fillStyle(h(P.MINT_1), 1);
+        g.fillRoundedRect(w / 2 - 13, hgt - 22, 26, 12, 3);
+        // 歯車
+        drawGear(g, w / 2 - 12, 14, 5);
+        // 入力口（西＝左）：ピンクの受け口
+        g.fillStyle(h(P.PINK_2), 1);
+        g.fillRect(0, hgt / 2 - 8, 6, 16);
+        g.fillStyle(h(P.PINK_3), 1);
+        g.fillTriangle(1, hgt / 2 - 5, 1, hgt / 2 + 5, 7, hgt / 2);
+        // 出力口（東＝右）：金の矢印
+        g.fillStyle(h(P.GOLD_2), 1);
+        g.fillTriangle(w - 9, hgt / 2 - 7, w - 9, hgt / 2 + 7, w - 1, hgt / 2);
+      });
+    },
+
+    /** 工房台（2×2・ラベンダー×金の豪華な合成台）：入力口=西／出力口=東 */
+    atelier(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        // 本体（ラベンダー＋金の厚縁）
+        g.fillStyle(h(P.LAVENDER_2), 1);
+        g.fillRoundedRect(2, 2, w - 4, hgt - 4, 9);
+        g.lineStyle(3, h(P.GOLD_2), 1);
+        g.strokeRoundedRect(2, 2, w - 4, hgt - 4, 9);
+        // 作業天板（クリーム）
+        g.fillStyle(h(P.CREAM), 1);
+        g.fillRoundedRect(w / 2 - 15, hgt / 2 - 11, 30, 22, 5);
+        g.lineStyle(1, h(P.GOLD_3), 0.8);
+        g.strokeRoundedRect(w / 2 - 15, hgt / 2 - 11, 30, 22, 5);
+        // 道具（金の針＋宝石）の意匠
+        g.fillStyle(h(P.GOLD_2), 1);
+        g.fillRect(w / 2 - 9, hgt / 2 - 6, 2, 14);
+        g.fillStyle(h(P.JEWEL_PINK), 1);
+        g.fillTriangle(w / 2 + 6, hgt / 2 - 2, w / 2 + 12, hgt / 2 - 2, w / 2 + 9, hgt / 2 + 5);
+        g.fillTriangle(w / 2 + 6, hgt / 2 - 2, w / 2 + 12, hgt / 2 - 2, w / 2 + 9, hgt / 2 - 8);
+        // 歯車（四隅の金）
+        drawGear(g, 12, 12, 5);
+        drawGear(g, w - 12, 12, 5);
+        // 入力口（西＝左）
+        g.fillStyle(h(P.LAVENDER_3), 1);
+        g.fillRect(0, hgt / 2 - 8, 6, 16);
+        g.fillStyle(h(P.LAVENDER_1), 1);
+        g.fillTriangle(1, hgt / 2 - 5, 1, hgt / 2 + 5, 7, hgt / 2);
+        // 出力口（東＝右）：金の矢印
+        g.fillStyle(h(P.GOLD_2), 1);
+        g.fillTriangle(w - 9, hgt / 2 - 7, w - 9, hgt / 2 + 7, w - 1, hgt / 2);
+      });
+    },
+
+    // --- 新アイテム ---
+
+    /** 絹糸：ミルクティーの糸巻き */
+    silk(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        const cx = w / 2, cy = hgt / 2;
+        g.fillStyle(h(P.MILK_TEA), 1);
+        g.fillRoundedRect(cx - 5, cy - 4, 10, 8, 2);
+        g.fillStyle(h(P.MILK), 1);
+        for (let i = -3; i <= 3; i += 2) g.fillRect(cx + i, cy - 4, 1, 8);
+        g.fillStyle(h(P.BISCUIT), 1);
+        g.fillRect(cx - 6, cy - 5, 1.5, 10);
+        g.fillRect(cx + 5, cy - 5, 1.5, 10);
+      });
+    },
+
+    /** 花：コーラルの5枚花 */
+    flower(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        drawFlower(g, w / 2, hgt / 2, 7, h(P.CLEAR_CORAL), h(P.LEMON_2));
+      });
+    },
+
+    /** リボン：ピンク中間調の蝶形 */
+    ribbon(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        drawRibbon(g, w / 2, hgt / 2, 6, h(P.PINK_2));
+      });
+    },
+
+    /** レース：ミルク色の丸ドイリー（スカラップ縁＋ラベンダー点） */
+    lace(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        const cx = w / 2, cy = hgt / 2;
+        g.fillStyle(h(P.LAVENDER_1), 1);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          g.fillCircle(cx + Math.cos(a) * 6, cy + Math.sin(a) * 6, 2.2);
+        }
+        g.fillStyle(h(P.MILK), 1);
+        g.fillCircle(cx, cy, 5);
+        g.lineStyle(1, h(P.LAVENDER_2), 1);
+        g.strokeCircle(cx, cy, 5);
+      });
+    },
+
+    /** ブーケ：コーラル＋ピンクの花束 */
+    bouquet(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        const cx = w / 2, cy = hgt / 2;
+        // 茎
+        g.fillStyle(h(P.MINT_3), 1);
+        g.fillRect(cx - 1, cy, 2, 7);
+        // 花
+        drawFlower(g, cx - 3, cy - 2, 4.5, h(P.CLEAR_CORAL), h(P.LEMON_2));
+        drawFlower(g, cx + 3, cy - 1, 4.5, h(P.PINK_2), h(P.LEMON_1));
+        drawFlower(g, cx, cy - 5, 4.5, h(P.JEWEL_PINK), h(P.LEMON_2));
+        // 結びリボン
+        drawRibbon(g, cx, cy + 5, 3, h(P.GOLD_2));
+      });
+    },
+
+    /** ティアラ：金のティアラ＋宝石 */
+    tiara(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        const cx = w / 2, cy = hgt / 2 + 2;
+        g.fillStyle(h(P.GOLD_2), 1);
+        // 台座の弧
+        g.fillRect(cx - 7, cy, 14, 2);
+        // 山（3つ）
+        g.fillTriangle(cx - 7, cy, cx - 3, cy, cx - 5, cy - 6);
+        g.fillTriangle(cx + 3, cy, cx + 7, cy, cx + 5, cy - 6);
+        g.fillTriangle(cx - 3, cy, cx + 3, cy, cx, cy - 9);
+        // 中央宝石
+        g.fillStyle(h(P.JEWEL_PINK), 1);
+        g.fillCircle(cx, cy - 9, 2);
+        g.fillStyle(h(P.CLEAR_TURQUOISE), 1);
+        g.fillCircle(cx - 5, cy - 6, 1.4);
+        g.fillCircle(cx + 5, cy - 6, 1.4);
+      });
+    },
+
+    /** ドレス：ピンクのドレス（高級品） */
+    dress(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        const cx = w / 2, cy = hgt / 2;
+        // スカート（Aライン）
+        g.fillStyle(h(P.PINK_2), 1);
+        g.fillTriangle(cx - 6, cy + 6, cx + 6, cy + 6, cx, cy - 3);
+        // 胴
+        g.fillStyle(h(P.PINK_3), 1);
+        g.fillTriangle(cx - 3, cy - 1, cx + 3, cy - 1, cx, cy - 6);
+        // 裾レース
+        g.fillStyle(h(P.MILK), 1);
+        g.fillRect(cx - 6, cy + 5, 12, 1.5);
+        // 金の帯
+        g.fillStyle(h(P.GOLD_2), 1);
+        g.fillRect(cx - 3, cy - 1, 6, 1.5);
       });
     },
 
