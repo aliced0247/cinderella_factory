@@ -7,8 +7,10 @@ Factorioリスペクトの工場自動化ゲーム × お姫様成り上がり�
 
 ## 遊び方
 
-`index.html` をブラウザで開くだけ（Phaser 3 同梱・サーバー不要・課金なし・セーブはlocalStorage）。
-スマホ実機検品は `npx http-server -p 8080` → 同一Wi-Fiのスマホから `http://<PCのIP>:8080`。
+- **オンライン（推奨）**：https://aliced0247.github.io/cinderella_factory/
+  （main にマージされると GitHub Actions が自動デプロイ。スマホでそのまま開ける）
+- **ローカル**：`index.html` をブラウザで開くだけ（Phaser 3 同梱・サーバー不要・課金なし・セーブはlocalStorage）
+- **同一Wi-Fiのスマホ実機**：`npx http-server -p 8080` → スマホから `http://<PCのIP>:8080`
 
 - 初期所持 **100リル**。設備はリルで設置（ベルト2／納品箱10／研磨機20／魔法の泉50）。撤去で半額払い戻し
 - 下のパレットから設備を選んでマスをタップで設置（ベルトはドラッグで連続敷設。リル不足のボタンはグレーアウト）
