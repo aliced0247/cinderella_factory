@@ -50,7 +50,7 @@ CF.ASSETS = {
   item_dress:              { file: null, gen: 'dress',          w: 16, h: 16 },
 
   // --- キャラ ---
-  princess:                { file: null, gen: 'princess',       w: 32, h: 48 },  // 姫 32×48
+  princess:                { file: 'assets/princess.png', gen: 'princess', w: 59, h: 96 },  // 姫（差し替え済み 59×96）
 
   // --- エフェクト ---
   sparkle:                 { file: null, gen: 'sparkle',        w: 8,  h: 8 }    // キラキラ粒子
