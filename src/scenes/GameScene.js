@@ -83,7 +83,11 @@ window.CF = window.CF || {};
     createPrincess() {
       const room = CF.World.room();
       this.princess = this.add.image(room.w * T() / 2, room.h * T() / 2, 'princess');
-      this.princess.setOrigin(0.5, 0.8); // 足元基準
+      this.princess.setOrigin(0.5, 0.85); // 足元基準
+      // 素材の実寸に依らず表示高さを 48px（=1.5タイル）に揃える。
+      // アスペクト比は維持（差し替えても巨大化しない）
+      const TARGET_H = 48;
+      this.princess.setScale(TARGET_H / this.princess.height);
     }
 
     createParticles() {
