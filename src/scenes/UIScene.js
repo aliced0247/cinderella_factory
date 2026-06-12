@@ -28,6 +28,9 @@ CF.input = { joy: { x: 0, y: 0 } };
       this.buttons = {};
       this.toastText = null;
       this.joyPointerId = null;
+      this.scroll = { min: 0, max: 0 };       // パレット横スクロール範囲
+      this.paletteDrag = null;                // パレットのドラッグ状態
+      this.paletteDragging = false;           // ドラッグ中（タップ抑止フラグ）
 
       this.createTopBar();
       this.createBottomBar();
@@ -46,11 +49,48 @@ CF.input = { joy: { x: 0, y: 0 } };
         CF.events.off('toast', this.showToast, this);
       });
 
-      // 仮想スティック操作
-      this.input.on('pointerdown', (p) => this.joyDown(p));
-      this.input.on('pointermove', (p) => this.joyMove(p));
-      this.input.on('pointerup', (p) => this.joyUp(p));
-      this.input.on('pointerupoutside', (p) => this.joyUp(p));
+      // 仮想スティック＋パレット横スクロール
+      this.input.on('pointerdown', (p) => this.onUiDown(p));
+      this.input.on('pointermove', (p) => this.onUiMove(p));
+      this.input.on('pointerup', (p) => this.onUiUp(p));
+      this.input.on('pointerupoutside', (p) => this.onUiUp(p));
+    }
+
+    // ------------------------------------------------------------ 入力ルーティング
+
+    inBottomBar(p) {
+      return p.y >= this.scale.height - BOTTOM_H;
+    }
+
+    onUiDown(p) {
+      this.paletteDragging = false;
+      // スティック優先（左下の円内）
+      const dj = Phaser.Math.Distance.Between(p.x, p.y, this.joyBase.x, this.joyBase.y);
+      if (dj <= 70 && this.joyPointerId === null && !this.inBottomBar(p)) {
+        this.joyDown(p);
+        return;
+      }
+      // 下部バー：パレットの横スクロール開始（タップ判定はボタン側）
+      if (this.inBottomBar(p) && this.paletteDrag === null) {
+        this.paletteDrag = { id: p.id, startX: p.x, x0: this.paletteStrip.x };
+      }
+    }
+
+    onUiMove(p) {
+      this.joyMove(p);
+      if (this.paletteDrag && this.paletteDrag.id === p.id && p.isDown) {
+        const dx = p.x - this.paletteDrag.startX;
+        if (Math.abs(dx) > 8) this.paletteDragging = true;
+        if (this.paletteDragging) {
+          this.paletteStrip.x = Phaser.Math.Clamp(
+            this.paletteDrag.x0 + dx, this.scroll.min, this.scroll.max);
+        }
+      }
+    }
+
+    onUiUp(p) {
+      this.joyUp(p);
+      if (this.paletteDrag && this.paletteDrag.id === p.id) this.paletteDrag = null;
     }
 
     // ------------------------------------------------------------ 上部バー（所持リル）
@@ -106,12 +146,12 @@ CF.input = { joy: { x: 0, y: 0 } };
     // ------------------------------------------------------------ 下部バー（建設パレット）
 
     createBottomBar() {
-      this.bottomBar = this.add.container(0, 0);
       this.bottomBg = this.add.rectangle(0, 0, 100, BOTTOM_H, CF.hex(P.CREAM), 0.96)
-        .setStrokeStyle(2, CF.hex(P.GOLD_2));
-      this.bottomBar.add(this.bottomBg);
+        .setStrokeStyle(2, CF.hex(P.GOLD_2)).setOrigin(0.5);
 
-      // 建設ボタン4種
+      // 横スクロールするパレット帯（建設ボタンを内包）
+      this.paletteStrip = this.add.container(0, 0);
+
       for (const type of CF.BUILD_ORDER) {
         const def = CF.BUILDINGS[type];
         const cont = this.add.container(0, 0);
@@ -123,39 +163,41 @@ CF.input = { joy: { x: 0, y: 0 } };
           fontSize: '9px', fontStyle: 'bold', color: P.COCOA_SHADOW
         }).setOrigin(0.5);
         // 価格バッジ（上部・金色）
-        const costBg = this.add.rectangle(0, -27, 44, 15, CF.hex(P.GOLD_1))
+        const costBg = this.add.rectangle(0, -27, 46, 15, CF.hex(P.GOLD_1))
           .setStrokeStyle(1, CF.hex(P.GOLD_2));
         const costTx = this.add.text(0, -27, `${def.cost}リル`, {
           fontSize: '10px', fontStyle: 'bold', color: P.GOLD_3
         }).setOrigin(0.5);
         cont.add([bg, icon, label, costBg, costTx]);
         bg.on('pointerup', () => this.selectTool(type));
-        this.bottomBar.add(cont);
+        this.paletteStrip.add(cont);
         this.buttons[type] = { cont, bg, icon, label, costBg, costTx };
       }
 
-      // 向きボタン（次に設置するものの向き）
-      {
-        const cont = this.add.container(0, 0);
-        const bg = this.add.rectangle(0, -4, 58, 58, CF.hex(P.LAVENDER_1))
-          .setStrokeStyle(2, CF.hex(P.LAVENDER_3)).setInteractive();
-        this.dirArrow = this.add.text(0, -8, '➜', {
-          fontSize: '24px', fontStyle: 'bold', color: P.LAVENDER_3
-        }).setOrigin(0.5);
-        const label = this.add.text(0, 22, 'むき', {
-          fontSize: '9px', fontStyle: 'bold', color: P.COCOA_SHADOW
-        }).setOrigin(0.5);
-        cont.add([bg, this.dirArrow, label]);
-        bg.on('pointerup', () => {
-          CF.ui.buildDir = (CF.ui.buildDir + 1) & 3;
-          this.dirArrow.setRotation(CF.ui.buildDir * Math.PI / 2);
-        });
-        this.bottomBar.add(cont);
-        this.buttons._dir = { cont, bg };
-      }
+      // パレット帯のマスク（はみ出しを下部バー内に収める）
+      this.paletteMaskG = this.add.graphics().setVisible(false);
+      this.paletteStrip.setMask(this.paletteMaskG.createGeometryMask());
+
+      // 向きボタン（右端固定・スクロールしない）
+      this.dirBtn = this.add.container(0, 0);
+      const dbg = this.add.rectangle(0, -4, 58, 58, CF.hex(P.LAVENDER_1))
+        .setStrokeStyle(2, CF.hex(P.LAVENDER_3)).setInteractive();
+      this.dirArrow = this.add.text(0, -8, '➜', {
+        fontSize: '24px', fontStyle: 'bold', color: P.LAVENDER_3
+      }).setOrigin(0.5);
+      const dlabel = this.add.text(0, 22, 'むき', {
+        fontSize: '9px', fontStyle: 'bold', color: P.COCOA_SHADOW
+      }).setOrigin(0.5);
+      this.dirBtn.add([dbg, this.dirArrow, dlabel]);
+      dbg.on('pointerup', () => {
+        if (this.paletteDragging) return;
+        CF.ui.buildDir = (CF.ui.buildDir + 1) & 3;
+        this.dirArrow.setRotation(CF.ui.buildDir * Math.PI / 2);
+      });
     }
 
     selectTool(type) {
+      if (this.paletteDragging) return; // スクロール中のタップは無視
       // リル不足の道具は選べない（必要額を案内）
       if (CF.ui.tool !== type && !this.affordable(type)) {
         this.showToast(`${CF.BUILDINGS[type].name}には${CF.BUILDINGS[type].cost}リル必要だよ`);
@@ -211,20 +253,44 @@ CF.input = { joy: { x: 0, y: 0 } };
     relayout() {
       const w = this.scale.width;
       const h = this.scale.height;
+      const stripY = h - BOTTOM_H / 2;
 
       this.topBar.setPosition(w / 2, 6 + TOP_H / 2 - 5);
-      this.bottomBar.setPosition(w / 2, h - BOTTOM_H / 2);
-      this.bottomBg.setSize(w, BOTTOM_H);
+      this.bottomBg.setPosition(w / 2, stripY).setSize(w, BOTTOM_H);
 
-      // ボタンを中央寄せで並べる
-      const keys = [...CF.BUILD_ORDER, '_dir'];
-      const bw = 58, gap = Math.min(10, (w - bw * keys.length) / (keys.length + 1));
-      const total = bw * keys.length + gap * (keys.length - 1);
-      let x = -total / 2 + bw / 2;
-      for (const k of keys) {
-        this.buttons[k].cont.setPosition(x, 0);
-        x += bw + gap;
+      const bw = 58, gap = 8, pad = 8;
+
+      // 向きボタン（右端固定）
+      const dirX = w - pad - bw / 2;
+      this.dirBtn.setPosition(dirX, stripY);
+
+      // パレット帯：右端の向きボタンの左側が可動領域
+      const regionLeft = pad;
+      const regionRight = dirX - bw / 2 - gap;
+      const availW = Math.max(bw, regionRight - regionLeft);
+
+      const n = CF.BUILD_ORDER.length;
+      const contentW = n * bw + (n - 1) * gap;
+      // 帯内のローカル配置（左から）
+      CF.BUILD_ORDER.forEach((k, i) => {
+        this.buttons[k].cont.setPosition(i * (bw + gap) + bw / 2, 0);
+      });
+
+      if (contentW <= availW) {
+        // 収まる：中央寄せ・スクロールなし
+        const x = regionLeft + (availW - contentW) / 2;
+        this.scroll.min = this.scroll.max = x;
+      } else {
+        this.scroll.max = regionLeft;                       // 先頭を左端に
+        this.scroll.min = regionLeft + availW - contentW;   // 末尾を右端に
       }
+      this.paletteStrip.y = stripY;
+      this.paletteStrip.x = Phaser.Math.Clamp(this.paletteStrip.x, this.scroll.min, this.scroll.max);
+
+      // マスク更新（帯の可視範囲＝下部バー内の可動領域）
+      this.paletteMaskG.clear();
+      this.paletteMaskG.fillStyle(0xffffff);
+      this.paletteMaskG.fillRect(regionLeft - bw / 2, h - BOTTOM_H, availW + bw, BOTTOM_H);
 
       // スティックは左下（下部バーの上）
       const jx = 76;
