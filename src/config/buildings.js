@@ -116,6 +116,10 @@ CF.isStorable = function (type) {
   return CF.ITEMS[type] && CF.ITEMS[type].tier === 'lux';
 };
 
+/** 姫スプライトの表示高さ（px）。機械(2×2=64px)と並んで自然な高さ。
+ *  素材の実寸に依らずこの高さに合わせて等倍スケールする（差し替えに強い） */
+CF.PRINCESS_DISPLAY_H = 60;
+
 
 /** 撤去時の払い戻し率（半額）。ただし最後の泉だけは全額（詰み対策） */
 CF.REFUND_RATE = 0.5;

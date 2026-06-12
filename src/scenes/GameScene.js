@@ -132,8 +132,8 @@ window.CF = window.CF || {};
     createPrincess() {
       const start = CF.World.tilePx(0, CF.ROOM_W / 2, CF.ROOM_H / 2);
       this.princess = this.add.image(start.x, start.y, 'princess').setOrigin(0.5, 0.85);
-      // もえちゃん裁定：59×96 スプライトは 1.3倍表示
-      this.princess.setScale(1.3);
+      // 素材の実寸に依らず表示高さを揃える（機械=64pxと並んで自然な大きさ）
+      this.princess.setScale(CF.PRINCESS_DISPLAY_H / this.princess.height);
       this.princessTop = this.princess.displayHeight * 0.85; // 足元originから頭頂までの距離
       this.applyPrincessAppearance();
     }

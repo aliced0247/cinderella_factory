@@ -22,12 +22,12 @@ const ok = (c, m) => console.log((c ? '✓ ' : '✗ ') + m) || (!c && (process.e
   await page.waitForFunction(() => window.CF && CF.game && CF.game.scene.isActive('Game'), null, { timeout: 15000 });
   console.log('— 起動 —');
 
-  // 姫スプライト 1.3倍表示
+  // 姫スプライト：59px素材を表示高さ60pxに（機械と同じくらい）
   const pr = await page.evaluate(() => {
     const gs = CF.game.scene.getScene('Game');
-    return { scale: +gs.princess.scaleX.toFixed(2), tex: gs.textures.get('princess').getSourceImage().width };
+    return { dh: Math.round(gs.princess.displayHeight), target: CF.PRINCESS_DISPLAY_H, tex: gs.textures.get('princess').getSourceImage().width };
   });
-  ok(pr.scale === 1.3 && pr.tex === 59, `姫スプライト59px素材を1.3倍表示（scale=${pr.scale}）`);
+  ok(pr.dh === pr.target && pr.tex === 59, `姫スプライト59px素材を表示高さ${pr.dh}pxに`);
 
   // ----- 回帰：工房台の2素材合成→納品（新エンジンでも動くか） -----
   const chain = await page.evaluate(async () => {
