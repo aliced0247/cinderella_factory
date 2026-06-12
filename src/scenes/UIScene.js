@@ -10,6 +10,7 @@ window.CF = window.CF || {};
 CF.ui = {
   tool: null,     // 選択中の建設道具（null=選択なし）
   buildDir: 0,    // 設置時の向き
+  modal: false,   // クローゼット／増築などのモーダル表示中
   isOverUI() { return false; } // UIScene生成時に差し替え
 };
 CF.input = { joy: { x: 0, y: 0 } };
@@ -42,12 +43,18 @@ CF.input = { joy: { x: 0, y: 0 } };
 
       CF.events.on('money', this.updateMoney, this);
       CF.events.on('toast', this.showToast, this);
+      CF.events.on('wardrobe:open', this.openWardrobe, this);
+      CF.events.on('expand:open', this.openExpand, this);
       this.scale.on('resize', () => this.relayout());
 
       this.events.on('shutdown', () => {
         CF.events.off('money', this.updateMoney, this);
         CF.events.off('toast', this.showToast, this);
+        CF.events.off('wardrobe:open', this.openWardrobe, this);
+        CF.events.off('expand:open', this.openExpand, this);
       });
+
+      this.modal = null;
 
       // 仮想スティック＋パレット横スクロール
       this.input.on('pointerdown', (p) => this.onUiDown(p));
@@ -63,6 +70,7 @@ CF.input = { joy: { x: 0, y: 0 } };
     }
 
     onUiDown(p) {
+      if (CF.ui.modal) return; // モーダル中はスティック・パレットを止める
       this.paletteDragging = false;
       // スティック優先（左下の円内）
       const dj = Phaser.Math.Distance.Between(p.x, p.y, this.joyBase.x, this.joyBase.y);
@@ -190,14 +198,14 @@ CF.input = { joy: { x: 0, y: 0 } };
       }).setOrigin(0.5);
       this.dirBtn.add([dbg, this.dirArrow, dlabel]);
       dbg.on('pointerup', () => {
-        if (this.paletteDragging) return;
+        if (this.paletteDragging || CF.ui.modal) return;
         CF.ui.buildDir = (CF.ui.buildDir + 1) & 3;
         this.dirArrow.setRotation(CF.ui.buildDir * Math.PI / 2);
       });
     }
 
     selectTool(type) {
-      if (this.paletteDragging) return; // スクロール中のタップは無視
+      if (this.paletteDragging || CF.ui.modal) return; // スクロール中／モーダル中は無視
       // リル不足の道具は選べない（必要額を案内）
       if (CF.ui.tool !== type && !this.affordable(type)) {
         this.showToast(`${CF.BUILDINGS[type].name}には${CF.BUILDINGS[type].cost}リル必要だよ`);
@@ -304,12 +312,114 @@ CF.input = { joy: { x: 0, y: 0 } };
     isOverUI(x, y) {
       const w = this.scale.width;
       const h = this.scale.height;
+      if (CF.ui.modal) return true;       // モーダル中は全面UI扱い
       if (y >= h - BOTTOM_H) return true; // 下部バー
       // 上部バー
       if (Math.abs(x - this.topBar.x) < 100 && y < this.topBar.y + TOP_H / 2) return true;
       // スティック
       if (Phaser.Math.Distance.Between(x, y, this.joyBase.x, this.joyBase.y) <= 70) return true;
       return false;
+    }
+
+    // ------------------------------------------------------------ モーダル（着せ替え／増築）
+    // UIScene は zoom 1 の固定カメラなので、モーダルは画面座標でブレずに出せる
+
+    _openModal() {
+      this.closeModal();
+      CF.ui.modal = true;
+      CF.input.joy.x = CF.input.joy.y = 0;
+      this.joyPointerId = null;
+      this.joyKnob.setPosition(this.joyBase.x, this.joyBase.y);
+      const w = this.scale.width, h = this.scale.height;
+      const layer = this.add.container(0, 0).setDepth(1000);
+      const dim = this.add.rectangle(0, 0, w, h, CF.hex(P.MIDNIGHT), 0.45).setOrigin(0).setInteractive();
+      layer.add(dim);
+      this.modal = layer;
+      return { layer, cx: w / 2, cy: h / 2 };
+    }
+
+    closeModal() {
+      if (this.modal) { this.modal.destroy(); this.modal = null; }
+      CF.ui.modal = false;
+    }
+
+    _panel(m, pw, ph, title) {
+      const { layer, cx, cy } = m;
+      const panel = this.add.rectangle(cx, cy, pw, ph, CF.hex(P.MILK), 0.98).setStrokeStyle(3, CF.hex(P.GOLD_2));
+      const head = this.add.text(cx, cy - ph / 2 + 18, title, { fontSize: '16px', fontStyle: 'bold', color: P.GOLD_3 }).setOrigin(0.5);
+      const xBg = this.add.rectangle(cx + pw / 2 - 16, cy - ph / 2 + 16, 26, 26, CF.hex(P.SUGAR_PINK)).setStrokeStyle(2, CF.hex(P.CHERRY)).setInteractive();
+      const xTx = this.add.text(xBg.x, xBg.y, '✕', { fontSize: '15px', fontStyle: 'bold', color: P.CHERRY }).setOrigin(0.5);
+      xBg.on('pointerup', () => this.closeModal());
+      layer.add([panel, head, xBg, xTx]);
+      return { cx, cy, pw, ph };
+    }
+
+    openWardrobe() {
+      const m = this._openModal();
+      const pw = 300, ph = 232;
+      const pn = this._panel(m, pw, ph, 'クローゼット');
+      const rows = [
+        { type: 'dress', fx: '見た目が変わる' },
+        { type: 'tiara', fx: '納品売上 +5%' },
+        { type: 'bouquet', fx: '歩く速さ +10%' }
+      ];
+      rows.forEach((row, idx) => {
+        const y = pn.cy - 56 + idx * 56;
+        const slot = CF.EQUIP_SLOT[row.type];
+        const count = CF.state.wardrobe[row.type] || 0;
+        const equipped = CF.state.equip[slot] === row.type;
+        const dim = count === 0 && !equipped;
+
+        const icon = this.add.image(pn.cx - pw / 2 + 30, y, CF.ITEMS[row.type].tex).setScale(1.7).setAlpha(dim ? 0.4 : 1);
+        const name = this.add.text(pn.cx - pw / 2 + 52, y - 9, `${CF.ITEMS[row.type].name} ×${count}`, {
+          fontSize: '13px', fontStyle: 'bold', color: P.COCOA_SHADOW
+        }).setOrigin(0, 0.5).setAlpha(dim ? 0.5 : 1);
+        const fx = this.add.text(pn.cx - pw / 2 + 52, y + 9, row.fx, { fontSize: '10px', color: P.LAVENDER_3 }).setOrigin(0, 0.5).setAlpha(dim ? 0.5 : 1);
+
+        const bx = pn.cx + pw / 2 - 44;
+        const fill = equipped ? P.GOLD_1 : (dim ? P.MILK_TEA : P.MINT_1);
+        const stroke = equipped ? P.GOLD_2 : (dim ? P.BISCUIT : P.MINT_3);
+        const btn = this.add.rectangle(bx, y, 64, 30, CF.hex(fill)).setStrokeStyle(2, CF.hex(stroke));
+        const btx = this.add.text(bx, y, equipped ? '外す' : '装備', {
+          fontSize: '12px', fontStyle: 'bold', color: equipped ? P.GOLD_3 : P.COCOA_SHADOW
+        }).setOrigin(0.5).setAlpha(dim ? 0.5 : 1);
+        if (!dim) {
+          btn.setInteractive();
+          btn.on('pointerup', () => {
+            CF.state.equip[slot] = equipped ? null : row.type;
+            CF.events.emit('appearance');   // 姫の見た目を更新（GameScene）
+            CF.events.emit('toast', equipped ? `${CF.ITEMS[row.type].name}を外した` : `${CF.ITEMS[row.type].name}を装備！`);
+            CF.Save.request();
+            this.openWardrobe(); // 再描画
+          });
+        }
+        m.layer.add([icon, name, fx, btn, btx]);
+      });
+    }
+
+    openExpand() {
+      const m = this._openModal();
+      const pw = 280, ph = 162;
+      const pn = this._panel(m, pw, ph, '工房を増築する？');
+      const info = this.add.text(pn.cx, pn.cy - 18, `右どなりに新しい部屋（${CF.ROOM_W}×${CF.ROOM_H}）`, {
+        fontSize: '12px', color: P.COCOA_SHADOW, align: 'center'
+      }).setOrigin(0.5);
+      const cost = this.add.text(pn.cx, pn.cy + 4, `${CF.EXPAND_COST} リル`, { fontSize: '20px', fontStyle: 'bold', color: P.GOLD_3 }).setOrigin(0.5);
+
+      const noBg = this.add.rectangle(pn.cx - 64, pn.cy + 44, 96, 34, CF.hex(P.MILK_TEA)).setStrokeStyle(2, CF.hex(P.BISCUIT)).setInteractive();
+      const noTx = this.add.text(noBg.x, noBg.y, 'やめる', { fontSize: '13px', fontStyle: 'bold', color: P.COCOA_SHADOW }).setOrigin(0.5);
+      noBg.on('pointerup', () => this.closeModal());
+
+      const ok = CF.state.money >= CF.EXPAND_COST;
+      const yesBg = this.add.rectangle(pn.cx + 64, pn.cy + 44, 96, 34, CF.hex(ok ? P.GOLD_1 : P.MILK_TEA)).setStrokeStyle(2, CF.hex(ok ? P.GOLD_2 : P.BISCUIT));
+      const yesTx = this.add.text(yesBg.x, yesBg.y, ok ? '増築する' : `あと${CF.EXPAND_COST - CF.state.money}`, {
+        fontSize: '13px', fontStyle: 'bold', color: ok ? P.GOLD_3 : P.COCOA_SHADOW
+      }).setOrigin(0.5).setAlpha(ok ? 1 : 0.6);
+      if (ok) {
+        yesBg.setInteractive();
+        yesBg.on('pointerup', () => { CF.events.emit('expand:do'); this.closeModal(); });
+      }
+      m.layer.add([info, cost, noBg, noTx, yesBg, yesTx]);
     }
 
     // ------------------------------------------------------------ トースト

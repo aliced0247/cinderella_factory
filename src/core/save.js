@@ -13,8 +13,11 @@ CF.Save = {
   save() {
     try {
       const data = {
-        v: 2,
+        v: 3,
         money: CF.state.money,
+        // Phase 3：収蔵品と装備（手持ちは一時状態なので保存しない）
+        wardrobe: CF.state.wardrobe,
+        equip: CF.state.equip,
         rooms: CF.World.rooms.map((room) => ({
           w: room.w,
           h: room.h,
@@ -39,8 +42,9 @@ CF.Save = {
       const raw = localStorage.getItem(this.KEY);
       if (!raw) return null;
       const data = JSON.parse(raw);
-      // v1（Phase 1）と v2（Phase 2）を受け入れる。配置データの形は前方互換
-      if (!data || (data.v !== 1 && data.v !== 2)) return null;
+      // v1（P1）/ v2（P2）/ v3（P3）を受け入れる。配置データの形は前方互換、
+      // 新フィールド（wardrobe/equip/2部屋目）は無ければ World 側で既定値を補う
+      if (!data || (data.v !== 1 && data.v !== 2 && data.v !== 3)) return null;
       return data;
     } catch (e) {
       console.warn('ロード失敗:', e);

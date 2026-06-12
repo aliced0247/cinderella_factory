@@ -78,14 +78,44 @@ CF.BUILDINGS = {
   delivery: {
     name: '納品箱', kind: 'delivery', size: 2, tex: 'building_delivery',
     cost: 10
+  },
+
+  // --- 家具（Phase 3）：機能はあるが生産ラインには関与しない ---
+  closet: {
+    name: 'クローゼット', kind: 'furniture', size: 2, tex: 'building_closet',
+    cost: 30
   }
 };
 
 /** 建設パレットの並び順（横スクロール対応） */
 CF.BUILD_ORDER = [
   'spawner', 'spawner_silk', 'spawner_flower',
-  'belt', 'polisher', 'sewing', 'atelier', 'delivery'
+  'belt', 'polisher', 'sewing', 'atelier', 'delivery', 'closet'
 ];
+
+// ============================================================ Phase 3：部屋・増築
+CF.ROOM_W = 20;          // 1部屋の幅（マス）
+CF.ROOM_H = 15;          // 1部屋の高さ（マス）
+CF.EXPAND_COST = 800;    // 増築価格（リル）
+CF.MAX_ROOMS = 2;        // Phase 3は2部屋まで（3部屋目以降はPhase 4）
+CF.DOOR_Y = 6;           // 扉の開始マス（y）
+CF.DOOR_H = 3;           // 扉の高さ（マス）。y=6,7,8 が通行可
+
+// ============================================================ Phase 3：着せ替え
+/** 装備スロット対応（高級品 → 部位） */
+CF.EQUIP_SLOT = { dress: 'body', tiara: 'head', bouquet: 'hand' };
+/** 装備効果（参考値。実処理は各所に埋め込み） */
+CF.EQUIP_FX = {
+  tiara:   { sellMul: 1.05 },  // 納品売上 +5%
+  bouquet: { speedMul: 1.1 },  // 歩行速度 +10%
+  dress:   { tint: true }      // 見た目変化（色相フィルタ仮実装）
+};
+
+/** 収蔵できる（＝高級品）か */
+CF.isStorable = function (type) {
+  return CF.ITEMS[type] && CF.ITEMS[type].tier === 'lux';
+};
+
 
 /** 撤去時の払い戻し率（半額）。ただし最後の泉だけは全額（詰み対策） */
 CF.REFUND_RATE = 0.5;

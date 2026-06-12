@@ -38,6 +38,9 @@ CF.ASSETS = {
   // --- 納品（2×2） ---
   building_delivery:       { file: null, gen: 'delivery',       w: 64, h: 64 },  // 納品箱
 
+  // --- 家具（2×2） ---
+  building_closet:         { file: null, gen: 'closet',         w: 64, h: 64 },  // クローゼット
+
   // --- アイテム（16×16） ---
   item_gem_ore:            { file: null, gen: 'gem_ore',        w: 16, h: 16 },
   item_gem_polished:       { file: null, gen: 'gem_polished',   w: 16, h: 16 },

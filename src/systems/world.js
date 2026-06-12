@@ -1,19 +1,26 @@
 /**
  * ワールド（部屋・グリッド・設備配置）のデータモデル
  *
- * 将来「部屋を買い足して拡張」できるよう、rooms は配列で持つ。
- * Phase 1 では rooms[0]（工房1部屋 20×15）のみを使う。
+ * Phase 3：部屋を右へ増築できる。rooms[] に部屋を並べ、
+ * 部屋 ri はワールド上で x方向に ri*ROOM_W だけオフセットして配置する（隙間なし）。
+ * 部屋の境目は壁＋扉。ベルトは部屋をまたいで繋がらない（近傍探索が部屋内で閉じるため）。
+ *
+ * 座標系：
+ *   ・各設備/アイテムは「部屋インデックス room ＋ 部屋ローカルの (x,y)」で持つ
+ *   ・描画用ワールドpxは tilePx(room,x,y) で求める（room オフセットを加味）
  */
 window.CF = window.CF || {};
 
 /** ゲーム全体の状態 */
 CF.state = {
-  money: 0
+  money: 0,
+  wardrobe: {},                               // 収蔵品：種別 → 個数（高級品のみ）
+  equip: { body: null, head: null, hand: null }, // 装備中：部位 → アイテム種（null=なし）
+  hand: null                                  // 手持ち（拾って運んでいるアイテム種）。セーブしない
 };
 
 CF.World = {
   rooms: [],
-  activeRoom: 0,
   _nextId: 1,
 
   /** 初期化（セーブがあれば復元） */
@@ -21,101 +28,137 @@ CF.World = {
     this.rooms = [];
     this._nextId = 1;
     CF.state.money = CF.START_MONEY;
+    CF.state.wardrobe = {};
+    CF.state.equip = { body: null, head: null, hand: null };
+    CF.state.hand = null;
 
     const data = CF.Save.load();
     if (data) {
       CF.state.money = (data.money == null) ? CF.START_MONEY : data.money;
-      for (const r of data.rooms) {
-        const room = this._createRoom(r.w, r.h);
-        this.rooms.push(room);
+      if (data.wardrobe) CF.state.wardrobe = data.wardrobe;
+      if (data.equip) {
+        CF.state.equip = {
+          body: data.equip.body || null,
+          head: data.equip.head || null,
+          hand: data.equip.hand || null
+        };
+      }
+      (data.rooms || []).forEach((r, ri) => {
+        this.rooms.push(this._createRoom(r.w || CF.ROOM_W, r.h || CF.ROOM_H));
         for (const b of r.buildings) {
-          // セーブ復元はバリデーション込みで再配置（壊れたデータに耐える）
-          const inst = this.place(b.t, b.x, b.y, b.d, this.rooms.length - 1);
-          // レシピ選択の復元（Phase 1セーブには無いので 0 のまま＝マイグレーション）
+          const inst = this.place(b.t, ri, b.x, b.y, b.d);
           if (inst && b.r != null) {
             const def = CF.BUILDINGS[b.t];
             if (def.recipes) inst.recipeIndex = Phaser.Math.Clamp(b.r, 0, def.recipes.length - 1);
           }
         }
-      }
+      });
     }
     if (this.rooms.length === 0) {
-      this.rooms.push(this._createRoom(20, 15)); // 工房1部屋：20×15マス
+      this.rooms.push(this._createRoom(CF.ROOM_W, CF.ROOM_H)); // 工房1部屋
     }
   },
 
   _createRoom(w, h) {
     const grid = [];
-    for (let y = 0; y < h; y++) {
-      grid.push(new Array(w).fill(null));
-    }
+    for (let y = 0; y < h; y++) grid.push(new Array(w).fill(null));
     return { w, h, grid, buildings: [] };
   },
 
-  room() {
-    return this.rooms[this.activeRoom];
+  /** 部屋を1つ増築（右へ）。成功なら新部屋インデックスを返す */
+  addRoom() {
+    if (this.rooms.length >= CF.MAX_ROOMS) return -1;
+    this.rooms.push(this._createRoom(CF.ROOM_W, CF.ROOM_H));
+    return this.rooms.length - 1;
   },
 
-  inBounds(x, y) {
-    const r = this.room();
-    return x >= 0 && y >= 0 && x < r.w && y < r.h;
+  canExpand() {
+    return this.rooms.length < CF.MAX_ROOMS;
   },
 
-  /** そのマスにある設備（無ければnull） */
-  at(x, y) {
-    if (!this.inBounds(x, y)) return null;
-    return this.room().grid[y][x];
+  // ------------------------------------------------------------ 座標
+
+  /** 部屋 ri のワールド原点（タイル単位・x） */
+  offsetX(ri) {
+    return ri * CF.ROOM_W;
   },
 
-  /** 種別ごとの設置数 */
-  countOf(type) {
-    return this.room().buildings.filter((b) => b.type === type).length;
+  /** 全部屋を並べた総幅（タイル） */
+  totalWidthTiles() {
+    return this.rooms.length * CF.ROOM_W;
+  },
+
+  /** 部屋ローカル (x,y) → ワールドpx（タイル中心） */
+  tilePx(ri, x, y) {
+    return {
+      x: (this.offsetX(ri) + x + 0.5) * CF.TILE,
+      y: (y + 0.5) * CF.TILE
+    };
+  },
+
+  /** ワールドpx → { ri, x, y }（どの部屋のどのローカルマスか）。範囲外は null */
+  worldToCell(px, py) {
+    const gx = Math.floor(px / CF.TILE);
+    const gy = Math.floor(py / CF.TILE);
+    if (gy < 0 || gy >= CF.ROOM_H) return null;
+    const ri = Math.floor(gx / CF.ROOM_W);
+    if (ri < 0 || ri >= this.rooms.length) return null;
+    return { ri, x: gx - ri * CF.ROOM_W, y: gy };
+  },
+
+  inBounds(ri, x, y) {
+    const r = this.rooms[ri];
+    return !!r && x >= 0 && y >= 0 && x < r.w && y < r.h;
+  },
+
+  /** 部屋 ri ローカル (x,y) の設備（無ければnull） */
+  at(ri, x, y) {
+    if (!this.inBounds(ri, x, y)) return null;
+    return this.rooms[ri].grid[y][x];
+  },
+
+  /** 部屋 ri 内の種別ごとの設置数 */
+  countOf(type, ri) {
+    return this.rooms[ri].buildings.filter((b) => b.type === type).length;
+  },
+
+  /** 全部屋を通した泉（収入源）の総数 */
+  spawnerCount() {
+    let n = 0;
+    for (const r of this.rooms) {
+      n += r.buildings.filter((b) => CF.BUILDINGS[b.type].kind === 'spawner').length;
+    }
+    return n;
   },
 
   /** 設置できるか（範囲内・空き・上限） */
-  canPlace(type, x, y) {
+  canPlace(type, ri, x, y) {
     const def = CF.BUILDINGS[type];
-    if (!def) return false;
-    if (def.limit && this.countOf(type) >= def.limit) return false;
+    if (!def || !this.rooms[ri]) return false;
+    if (def.limit && this.countOf(type, ri) >= def.limit) return false;
     for (let dy = 0; dy < def.size; dy++) {
       for (let dx = 0; dx < def.size; dx++) {
-        if (!this.inBounds(x + dx, y + dy)) return false;
-        if (this.at(x + dx, y + dy)) return false;
+        if (!this.inBounds(ri, x + dx, y + dy)) return false;
+        if (this.at(ri, x + dx, y + dy)) return false;
       }
     }
     return true;
   },
 
-  /**
-   * 設置する。成功なら設備インスタンスを返す（失敗はnull）
-   * インスタンス：{ id, type, x, y, dir, size, ...機械の動作状態 }
-   */
-  place(type, x, y, dir, roomIndex) {
-    const ri = roomIndex == null ? this.activeRoom : roomIndex;
-    const prevActive = this.activeRoom;
-    this.activeRoom = ri;
-    if (!this.canPlace(type, x, y)) {
-      this.activeRoom = prevActive;
-      return null;
-    }
+  /** 設置する。成功なら設備インスタンスを返す（失敗はnull） */
+  place(type, ri, x, y, dir) {
+    if (!this.canPlace(type, ri, x, y)) return null;
     const def = CF.BUILDINGS[type];
     const b = {
       id: this._nextId++,
-      type, x, y,
+      type, room: ri, x, y,
       dir: dir == null ? 0 : (dir & 3),
       size: def.size,
-      recipeIndex: 0,    // processor/assembler：選択中レシピ（セーブ対象）
-      // --- 機械の動作状態（セーブ対象外） ---
-      timer: 0,          // スポナー：排出タイマー
-      processing: null,  // 加工中： { t, time, out }
-      output: null,      // 完成して排出待ちのアイテム種
-      incoming: false    // processor：搬入中のアイテムがいる
+      recipeIndex: 0,
+      // 動作状態（セーブ対象外）
+      timer: 0, processing: null, output: null, incoming: false
     };
-    // assembler（工房台）：複数素材の内部バッファ
-    if (def.kind === 'assembler') {
-      b.buffer = {};        // 素材種 → 個数
-      b.incomingCount = {}; // 素材種 → 搬入中の数（バッファ上限の予約に使う）
-    }
+    if (def.kind === 'assembler') { b.buffer = {}; b.incomingCount = {}; }
     const room = this.rooms[ri];
     for (let dy = 0; dy < def.size; dy++) {
       for (let dx = 0; dx < def.size; dx++) {
@@ -123,41 +166,32 @@ CF.World = {
       }
     }
     room.buildings.push(b);
-    this.activeRoom = prevActive;
     return b;
   },
 
   /** 撤去する */
   remove(b) {
-    const room = this.room();
+    const room = this.rooms[b.room];
     for (let dy = 0; dy < b.size; dy++) {
       for (let dx = 0; dx < b.size; dx++) {
-        if (room.grid[b.y + dy][b.x + dx] === b) {
-          room.grid[b.y + dy][b.x + dx] = null;
-        }
+        if (room.grid[b.y + dy][b.x + dx] === b) room.grid[b.y + dy][b.x + dx] = null;
       }
     }
     const i = room.buildings.indexOf(b);
     if (i >= 0) room.buildings.splice(i, 1);
   },
 
-  /** 回転（時計回りに90°） */
-  rotate(b) {
-    b.dir = (b.dir + 1) & 3;
-  },
+  rotate(b) { b.dir = (b.dir + 1) & 3; },
 
-  /** 設備が占めるマスの中心（ワールドpx） */
+  /** 設備の中心ワールドpx */
   centerPx(b) {
     return {
-      x: (b.x + b.size / 2) * CF.TILE,
+      x: (this.offsetX(b.room) + b.x + b.size / 2) * CF.TILE,
       y: (b.y + b.size / 2) * CF.TILE
     };
   },
 
-  /**
-   * 設備の「dir側の面」の外側に隣接するマス一覧
-   * （スポナーの排出先・研磨機の出力先の候補）
-   */
+  /** dir側の面の外側に隣接するローカルマス一覧（排出/出力先候補） */
   frontCells(b) {
     const d = CF.DIRS[b.dir];
     const cells = [];
@@ -172,7 +206,7 @@ CF.World = {
     return cells;
   },
 
-  /** 設備の「dirの反対側の面」のマス（研磨機の入力口セル）一覧 */
+  /** dirの反対側の面のローカルマス一覧（入力口） */
   backCells(b) {
     const d = CF.DIRS[b.dir];
     const cells = [];

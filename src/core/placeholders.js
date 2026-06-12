@@ -463,6 +463,41 @@ window.CF = window.CF || {};
       });
     },
 
+    // ============================================================ Phase 3
+
+    /** クローゼット（2×2・ミルクティーの戸棚＋金の取っ手＋ハート） */
+    closet(scene, key, w, hgt) {
+      makeTex(scene, key, w, hgt, (g) => {
+        // 戸棚本体
+        g.fillStyle(h(P.MILK_TEA), 1);
+        g.fillRoundedRect(4, 3, w - 8, hgt - 6, 6);
+        g.lineStyle(3, h(P.BISCUIT), 1);
+        g.strokeRoundedRect(4, 3, w - 8, hgt - 6, 6);
+        // 観音扉の合わせ目
+        g.lineStyle(2, h(P.COCOA_SHADOW), 0.8);
+        g.lineBetween(w / 2, 6, w / 2, hgt - 6);
+        // 扉パネル（クリーム）
+        g.fillStyle(h(P.CREAM), 1);
+        g.fillRoundedRect(8, 8, w / 2 - 12, hgt - 16, 3);
+        g.fillRoundedRect(w / 2 + 4, 8, w / 2 - 12, hgt - 16, 3);
+        // ハートの飾り
+        const heart = (cx, cy, s, col) => {
+          g.fillStyle(h(col), 1);
+          g.fillCircle(cx - s * 0.5, cy - s * 0.3, s * 0.55);
+          g.fillCircle(cx + s * 0.5, cy - s * 0.3, s * 0.55);
+          g.fillTriangle(cx - s, cy, cx + s, cy, cx, cy + s);
+        };
+        heart(w / 2 - 8, hgt / 2 - 4, 5, P.PINK_2);
+        heart(w / 2 + 8, hgt / 2 - 4, 5, P.PINK_2);
+        // 金の取っ手
+        g.fillStyle(h(P.GOLD_2), 1);
+        g.fillCircle(w / 2 - 4, hgt / 2 + 8, 2);
+        g.fillCircle(w / 2 + 4, hgt / 2 + 8, 2);
+        // 天板のリボン
+        drawRibbon(g, w / 2, 6, 6, h(P.JEWEL_PINK));
+      });
+    },
+
     /** キラキラ粒子（4方向の星） */
     sparkle(scene, key, w, hgt) {
       makeTex(scene, key, w, hgt, (g) => {
